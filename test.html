@@ -313,6 +313,10 @@
             font-weight: bold;
             color: var(--lyric-active-color) !important;
             text-shadow: 0 0 var(--lyric-active-blur) var(--lyric-active-color);
+        }
+        
+        .lyric-translation {
+            font-size: 0.8em;
             transform: scale(1.05);
         }
         
@@ -322,6 +326,47 @@
             border-radius: 8px;
             margin-bottom: 10px;
             display: none;
+        }
+
+        .lyric-box {
+            position: relative;
+            isolation: isolate;
+            transition: background 0.3s;
+        }
+
+        .lyric-background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-size: cover;
+            background-position: center;
+            filter: blur(50px) brightness(0.6);
+            z-index: -1;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            transform: scale(1.2);
+        }
+
+        .lyric-background.active {
+            opacity: 1;
+            animation: bg-breathe 10s ease-in-out infinite alternate;
+        }
+
+        @keyframes bg-breathe {
+            0% { transform: scale(1.2); }
+            100% { transform: scale(1.3); }
+        }
+
+        .lyric-box.fluid-active h5,
+        .lyric-box.fluid-active .lyric-line {
+            color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .lyric-box.fluid-active .lyric-line.active {
+            color: #ffffff !important;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
         }
 
         .text-tips {
@@ -475,11 +520,12 @@
             </div>
 
             <div class="lyric-box">
+                <div id="lyric-bg" class="lyric-background"></div>
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div class="d-flex align-items-center">
                         <h5 class="mb-0 me-2">歌词</h5>
                         <button class="btn btn-sm btn-outline-secondary" id="toggle-lyric-settings" style="padding: 2px 6px; font-size: 12px;">
-                            ⚙️ 设置
+                            设置
                         </button>
                     </div>
                     <div class="btn-group btn-group-sm">
@@ -496,6 +542,12 @@
                         <div class="col-auto ms-3"><label class="form-label mb-0 small">光晕强度</label></div>
                         <div class="col">
                             <input type="range" class="form-range" id="lyric-glow-range" min="0" max="20" step="1" value="0">
+                        </div>
+                        <div class="col-auto ms-3">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="toggle-fluid-cover">
+                                <label class="form-check-label small" for="toggle-fluid-cover">流体封面</label>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -625,12 +677,14 @@
                 aplayerInstance.on('play', () => {
                     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
                     const currentSongData = aplayerInstance.list.audios[aplayerInstance.list.index];
+                    $('.lyric-background').css('animation-play-state', 'running');
                     if (currentSongData) {
                        updateMediaSession(currentSongData);
                     }
                 });
                 aplayerInstance.on('pause', () => {
                     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+                    $('.lyric-background').css('animation-play-state', 'paused');
                 });
                 aplayerInstance.on('ended', playNextSong);
                 aplayerInstance.on('timeupdate', updatePositionState);
@@ -977,23 +1031,43 @@
                 }
 
                 const isMetaMode = $('#show-lrc-meta').hasClass('active');
+                const showFluidCover = $('#toggle-fluid-cover').is(':checked');
                 
                 if (isMetaMode) {
                     // Display original metadata (LRC format)
+                    $('#lyric-bg').removeClass('active');
+                    $('.lyric-box').removeClass('fluid-active');
                     $('#lyric').css('text-align', 'left');
                     $('#lyric').html(currentLyricRaw.replace(/\n/g, '<br>'));
                     parsedLyrics = [];
                 } else {
                     // Display synced lyrics
+                    if (showFluidCover) {
+                        $('#lyric-bg').css('background-image', `url(${$('#song_pic').attr('src')})`);
+                        $('#lyric-bg').addClass('active');
+                        $('.lyric-box').addClass('fluid-active');
+                    } else {
+                        $('#lyric-bg').removeClass('active');
+                        $('.lyric-box').removeClass('fluid-active');
+                    }
                     $('#lyric').css('text-align', 'center');
                     parsedLyrics = lrctrim(currentLyricRaw);
                     let html = '';
                     parsedLyrics.forEach((line, i) => {
-                        // line: [timestamp, originalIndex, text]
-                        html += `<div class="lyric-line" data-index="${i}">${line[2]}</div>`;
+                        let text = line[2];
+                        let translation = '';
+                        
+                        const translationMatch = text.match(/\[(.*?)\]/);
+                        if (translationMatch) {
+                            translation = `<div class="lyric-translation">${translationMatch[0]}</div>`;
+                            text = text.replace(/\[(.*?)\]/, '').trim();
+                        }
+
+                        html += `<div class="lyric-line" data-index="${i}">${text}${translation}</div>`;
                     });
                     $('#lyric').html(html);
                 }
+
             }
 
             async function playSongById(songId) {
@@ -1021,6 +1095,7 @@
                         $('#song_level').text(response.level);
                         $('#song_size').text(response.size);
                         $('#song_url').attr('href', response.url);
+                        // Background update handled in renderLyrics
                         renderLyrics();
                         $('#song-info').removeClass('d-none');
                         
@@ -1069,6 +1144,10 @@
             
             $('#toggle-lyric-settings').on('click', function() {
                 $('#lyric-settings-panel').slideToggle();
+            });
+            
+            $('#toggle-fluid-cover').on('change', function() {
+                renderLyrics();
             });
 
             $('#lyric-color-picker').on('input', function() {
